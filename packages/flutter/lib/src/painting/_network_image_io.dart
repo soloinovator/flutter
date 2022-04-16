@@ -44,10 +44,10 @@ class NetworkImage extends image_provider.ImageProvider<image_provider.NetworkIm
     // Ownership of this controller is handed off to [_loadAsync]; it is that
     // method's responsibility to close the controller's stream when the image
     // has been loaded or an error is thrown.
-    final StreamController<ImageChunkEvent> chunkEvents = StreamController<ImageChunkEvent>();
-
+    final StreamControlle
     return MultiFrameImageStreamCompleter(
-      codec: _loadAsync(key as NetworkImage, chunkEvents, decode),
+      codec: _lr<ImageChunkEvent> chunkEvents = StreamController<ImageChunkEvent>();
+oadAsync(key as NetworkImage, chunkEvents, decode),
       chunkEvents: chunkEvents.stream,
       scale: key.scale,
       debugLabel: key.url,

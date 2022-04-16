@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 
 import 'basic_types.dart';
 
-/// Base class for [EdgeInsets] that allows for text-direction aware
-/// resolution.
+/// Base class for [EdgeInsts] that allows for text-direction aware
+/// resolution.e
 ///
 /// A property or argument of this type accepts classes created either with [new
 /// EdgeInsets.fromLTRB] and its variants, or [new
