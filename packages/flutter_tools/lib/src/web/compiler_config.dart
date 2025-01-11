@@ -2,17 +2,44 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '../base/utils.dart';
+import '../build_info.dart' show BuildMode;
 import '../convert.dart';
 import 'compile.dart';
 
-enum CompileTarget {
-  js,
-  wasm,
-}
+enum CompileTarget { js, wasm }
 
 sealed class WebCompilerConfig {
-  const WebCompilerConfig({required this.renderer});
+  const WebCompilerConfig({
+    required this.renderer,
+    this.optimizationLevel,
+    required this.sourceMaps,
+  });
+
+  /// Build environment flag for [optimizationLevel].
+  static const String kOptimizationLevel = 'OptimizationLevel';
+
+  /// Build environment flag for [sourceMaps].
+  static const String kSourceMapsEnabled = 'SourceMaps';
+
+  /// Calculates the optimization level for dart2js/dart2wasm for the given
+  /// build mode.
+  int optimizationLevelForBuildMode(BuildMode mode) =>
+      optimizationLevel ??
+      switch (mode) {
+        BuildMode.debug => 0,
+        BuildMode.profile || BuildMode.release => 4,
+        BuildMode.jitRelease => throw ArgumentError('Invalid build mode for web'),
+      };
+
+  /// The compiler optimization level specified by the user.
+  ///
+  /// Valid values are O0 (lowest, debug default) to O4 (highest, release default).
+  /// If the value is null, the user hasn't specified an optimization level and an
+  /// appropriate default for the build mode will be used instead.
+  final int? optimizationLevel;
+
+  /// `true` if the compiler build should output source maps.
+  final bool sourceMaps;
 
   /// Returns which target this compiler outputs (js or wasm)
   CompileTarget get compileTarget;
@@ -20,7 +47,14 @@ sealed class WebCompilerConfig {
 
   String get buildKey;
 
-  Map<String, Object> get buildEventAnalyticsValues => <String, Object>{};
+  Map<String, Object> get buildEventAnalyticsValues => <String, Object>{
+    if (optimizationLevel != null) 'optimizationLevel': optimizationLevel!,
+  };
+
+  Map<String, dynamic> get _buildKeyMap => <String, dynamic>{
+    'optimizationLevel': optimizationLevel,
+    'webRenderer': renderer.name,
+  };
 }
 
 /// Configuration for the Dart-to-Javascript compiler (dart2js).
@@ -29,42 +63,26 @@ class JsCompilerConfig extends WebCompilerConfig {
     this.csp = false,
     this.dumpInfo = false,
     this.nativeNullAssertions = false,
-    this.optimizationLevel = kDart2jsDefaultOptimizationLevel,
+    super.optimizationLevel,
     this.noFrequencyBasedMinification = false,
-    this.sourceMaps = true,
-    super.renderer = WebRendererMode.auto,
+    super.sourceMaps = true,
+    super.renderer = WebRendererMode.defaultForJs,
   });
 
   /// Instantiates [JsCompilerConfig] suitable for the `flutter run` command.
   const JsCompilerConfig.run({
     required bool nativeNullAssertions,
     required WebRendererMode renderer,
-  }) : this(
-          nativeNullAssertions: nativeNullAssertions,
-          optimizationLevel: kDart2jsDefaultOptimizationLevel,
-          renderer: renderer,
-        );
-
-  /// The default optimization level for dart2js.
-  ///
-  /// Maps to [kDart2jsOptimization].
-  static const String kDart2jsDefaultOptimizationLevel = 'O4';
-
-  /// Build environment flag for [optimizationLevel].
-  static const String kDart2jsOptimization = 'Dart2jsOptimization';
+  }) : this(nativeNullAssertions: nativeNullAssertions, renderer: renderer);
 
   /// Build environment flag for [dumpInfo].
   static const String kDart2jsDumpInfo = 'Dart2jsDumpInfo';
 
   /// Build environment flag for [noFrequencyBasedMinification].
-  static const String kDart2jsNoFrequencyBasedMinification =
-      'Dart2jsNoFrequencyBasedMinification';
+  static const String kDart2jsNoFrequencyBasedMinification = 'Dart2jsNoFrequencyBasedMinification';
 
   /// Build environment flag for [csp].
   static const String kCspMode = 'cspMode';
-
-  /// Build environment flag for [sourceMaps].
-  static const String kSourceMapsEnabled = 'SourceMaps';
 
   /// Build environment flag for [nativeNullAssertions].
   static const String kNativeNullAssertions = 'NativeNullAssertions';
@@ -82,43 +100,45 @@ class JsCompilerConfig extends WebCompilerConfig {
   // TODO(kevmoo): consider renaming this to be "positive". Double negatives are confusing.
   final bool noFrequencyBasedMinification;
 
-  /// The compiler optimization level.
-  ///
-  /// Valid values are O1 (lowest, profile default) to O4 (highest, release default).
-  // TODO(kevmoo): consider storing this as an [int] and validating it!
-  final String optimizationLevel;
-
-  /// `true` if the JavaScript compiler build should output source maps.
-  final bool sourceMaps;
-
   @override
   CompileTarget get compileTarget => CompileTarget.js;
 
   /// Arguments to use in both phases: full JS compile and CFE-only.
-  List<String> toSharedCommandOptions() => <String>[
-        if (nativeNullAssertions) '--native-null-assertions',
-        if (!sourceMaps) '--no-source-maps',
-      ];
+  List<String> toSharedCommandOptions(BuildMode buildMode) => <String>[
+    if (nativeNullAssertions) '--native-null-assertions',
+    if (!sourceMaps) '--no-source-maps',
+    if (buildMode == BuildMode.debug) '--enable-asserts',
+  ];
+
+  @override
+  int optimizationLevelForBuildMode(BuildMode mode) {
+    final int level = super.optimizationLevelForBuildMode(mode);
+
+    // dart2js optimization level 0 is not well supported. Use
+    // 1 instead.
+    return level == 0 ? 1 : level;
+  }
 
   /// Arguments to use in the full JS compile, but not CFE-only.
   ///
   /// Includes the contents of [toSharedCommandOptions].
-  List<String> toCommandOptions() => <String>[
-        ...toSharedCommandOptions(),
-        '-$optimizationLevel',
-        if (dumpInfo) '--dump-info',
-        if (noFrequencyBasedMinification) '--no-frequency-based-minification',
-        if (csp) '--csp',
-      ];
+  List<String> toCommandOptions(BuildMode buildMode) => <String>[
+    if (buildMode != BuildMode.release) '--no-minify',
+    ...toSharedCommandOptions(buildMode),
+    '-O${optimizationLevelForBuildMode(buildMode)}',
+    if (dumpInfo) '--stage=dump-info-all',
+    if (noFrequencyBasedMinification) '--no-frequency-based-minification',
+    if (csp) '--csp',
+  ];
 
   @override
   String get buildKey {
     final Map<String, dynamic> settings = <String, dynamic>{
+      ...super._buildKeyMap,
       'csp': csp,
       'dumpInfo': dumpInfo,
       'nativeNullAssertions': nativeNullAssertions,
       'noFrequencyBasedMinification': noFrequencyBasedMinification,
-      'optimizationLevel': optimizationLevel,
       'sourceMaps': sourceMaps,
     };
     return jsonEncode(settings);
@@ -128,68 +148,38 @@ class JsCompilerConfig extends WebCompilerConfig {
 /// Configuration for the Wasm compiler.
 class WasmCompilerConfig extends WebCompilerConfig {
   const WasmCompilerConfig({
-    this.omitTypeChecks = false,
-    this.wasmOpt = WasmOptLevel.defaultValue,
-    super.renderer = WebRendererMode.auto,
+    super.optimizationLevel,
+    this.stripWasm = true,
+    super.sourceMaps = true,
+    super.renderer = WebRendererMode.defaultForWasm,
   });
 
-  /// Build environment for [omitTypeChecks].
-  static const String kOmitTypeChecks = 'WasmOmitTypeChecks';
+  /// Build environment for [stripWasm].
+  static const String kStripWasm = 'StripWasm';
 
-  /// Build environment for [wasmOpt].
-  static const String kRunWasmOpt = 'RunWasmOpt';
-
-  /// If `omit-type-checks` should be passed to `dart2wasm`.
-  final bool omitTypeChecks;
-
-  /// Run wasm-opt on the resulting module.
-  final WasmOptLevel wasmOpt;
+  /// Whether to strip the wasm file of static symbols.
+  final bool stripWasm;
 
   @override
   CompileTarget get compileTarget => CompileTarget.wasm;
 
-  bool get runWasmOpt =>
-      wasmOpt == WasmOptLevel.full || wasmOpt == WasmOptLevel.debug;
-
-  List<String> toCommandOptions() => <String>[
-        if (omitTypeChecks) '--omit-type-checks',
-      ];
-
-  @override
-  Map<String, Object> get buildEventAnalyticsValues => <String, Object>{
-        ...super.buildEventAnalyticsValues,
-        kOmitTypeChecks: omitTypeChecks.toString(),
-        kRunWasmOpt: wasmOpt.name,
-      };
+  List<String> toCommandOptions(BuildMode buildMode) {
+    final bool stripSymbols = buildMode == BuildMode.release && stripWasm;
+    return <String>[
+      '-O${optimizationLevelForBuildMode(buildMode)}',
+      '--${stripSymbols ? '' : 'no-'}strip-wasm',
+      if (!sourceMaps) '--no-source-maps',
+      if (buildMode == BuildMode.debug) '--extra-compiler-option=--enable-asserts',
+    ];
+  }
 
   @override
   String get buildKey {
     final Map<String, dynamic> settings = <String, dynamic>{
-      'omitTypeChecks': omitTypeChecks,
-      'wasmOpt': wasmOpt.name,
+      ...super._buildKeyMap,
+      'stripWasm': stripWasm,
+      'sourceMaps': sourceMaps,
     };
     return jsonEncode(settings);
   }
-
-}
-
-enum WasmOptLevel implements CliEnum {
-  full,
-  debug,
-  none;
-
-  static const WasmOptLevel defaultValue = WasmOptLevel.full;
-
-  @override
-  String get cliName => name;
-
-  @override
-  String get helpText => switch (this) {
-        WasmOptLevel.none =>
-          'wasm-opt is not run. Fastest build; bigger, slower output.',
-        WasmOptLevel.debug =>
-          'Similar to `${WasmOptLevel.full.name}`, but member names are preserved. Debugging is easier, but size is a bit bigger.',
-        WasmOptLevel.full =>
-          'wasm-opt is run. Build time is slower, but output is smaller and faster.',
-      };
 }

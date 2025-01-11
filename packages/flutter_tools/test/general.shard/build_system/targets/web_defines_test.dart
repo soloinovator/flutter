@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:flutter_tools/src/build_system/targets/web.dart';
 import 'package:flutter_tools/src/web/compile.dart';
 import 'package:test/test.dart';
 
 void main() {
-
   group('dart-defines and web-renderer options', () {
     late List<String> dartDefines;
 
@@ -16,36 +14,42 @@ void main() {
     });
 
     test('auto web-renderer with no dart-defines', () {
-      dartDefines = updateDartDefines(dartDefines, WebRendererMode.auto);
+      dartDefines = WebRendererMode.auto.updateDartDefines(dartDefines);
       expect(dartDefines, <String>['FLUTTER_WEB_AUTO_DETECT=true']);
     });
 
     test('canvaskit web-renderer with no dart-defines', () {
-      dartDefines = updateDartDefines(dartDefines, WebRendererMode.canvaskit);
-      expect(dartDefines, <String>['FLUTTER_WEB_AUTO_DETECT=false','FLUTTER_WEB_USE_SKIA=true']);
+      dartDefines = WebRendererMode.canvaskit.updateDartDefines(dartDefines);
+      expect(dartDefines, <String>['FLUTTER_WEB_USE_SKIA=true', 'FLUTTER_WEB_USE_SKWASM=false']);
     });
 
     test('html web-renderer with no dart-defines', () {
-      dartDefines = updateDartDefines(dartDefines, WebRendererMode.html);
-      expect(dartDefines, <String>['FLUTTER_WEB_AUTO_DETECT=false','FLUTTER_WEB_USE_SKIA=false']);
+      dartDefines = WebRendererMode.html.updateDartDefines(dartDefines);
+      expect(dartDefines, <String>['FLUTTER_WEB_USE_SKIA=false', 'FLUTTER_WEB_USE_SKWASM=false']);
     });
 
     test('auto web-renderer with existing dart-defines', () {
       dartDefines = <String>['FLUTTER_WEB_USE_SKIA=false'];
-      dartDefines = updateDartDefines(dartDefines, WebRendererMode.auto);
+      dartDefines = WebRendererMode.auto.updateDartDefines(dartDefines);
       expect(dartDefines, <String>['FLUTTER_WEB_AUTO_DETECT=true']);
     });
 
-    test('canvaskit web-renderer with no dart-defines', () {
+    test('canvaskit web-renderer with existing dart-defines', () {
       dartDefines = <String>['FLUTTER_WEB_USE_SKIA=false'];
-      dartDefines = updateDartDefines(dartDefines, WebRendererMode.canvaskit);
-      expect(dartDefines, <String>['FLUTTER_WEB_AUTO_DETECT=false','FLUTTER_WEB_USE_SKIA=true']);
+      dartDefines = WebRendererMode.canvaskit.updateDartDefines(dartDefines);
+      expect(dartDefines, <String>['FLUTTER_WEB_USE_SKIA=true', 'FLUTTER_WEB_USE_SKWASM=false']);
     });
 
-    test('html web-renderer with no dart-defines', () {
+    test('html web-renderer with existing dart-defines', () {
       dartDefines = <String>['FLUTTER_WEB_USE_SKIA=true'];
-      dartDefines = updateDartDefines(dartDefines, WebRendererMode.html);
-      expect(dartDefines, <String>['FLUTTER_WEB_AUTO_DETECT=false','FLUTTER_WEB_USE_SKIA=false']);
+      dartDefines = WebRendererMode.html.updateDartDefines(dartDefines);
+      expect(dartDefines, <String>['FLUTTER_WEB_USE_SKIA=false', 'FLUTTER_WEB_USE_SKWASM=false']);
+    });
+
+    test('skwasm web-renderer with existing dart-defines', () {
+      dartDefines = <String>['FLUTTER_WEB_USE_SKWASM=false'];
+      dartDefines = WebRendererMode.skwasm.updateDartDefines(dartDefines);
+      expect(dartDefines, <String>['FLUTTER_WEB_USE_SKIA=false', 'FLUTTER_WEB_USE_SKWASM=true']);
     });
   });
 }
