@@ -6,6 +6,7 @@
 
 #include "flutter/display_list/dl_builder.h"
 #include "flutter/fml/logging.h"
+#include "flutter/impeller/geometry/round_superellipse_param.h"
 
 namespace flutter {
 
@@ -42,7 +43,7 @@ bool DisplayListMatrixClipState::mapAndClipRect(const DlRect& src,
 }
 
 void DisplayListMatrixClipState::clipRect(const DlRect& rect,
-                                          ClipOp op,
+                                          DlClipOp op,
                                           bool is_aa) {
   if (rect.IsFinite()) {
     adjustCullRect(rect, op, is_aa);
@@ -50,16 +51,16 @@ void DisplayListMatrixClipState::clipRect(const DlRect& rect,
 }
 
 void DisplayListMatrixClipState::clipOval(const DlRect& bounds,
-                                          ClipOp op,
+                                          DlClipOp op,
                                           bool is_aa) {
   if (!bounds.IsFinite()) {
     return;
   }
   switch (op) {
-    case DlCanvas::ClipOp::kIntersect:
+    case DlClipOp::kIntersect:
       adjustCullRect(bounds, op, is_aa);
       break;
-    case DlCanvas::ClipOp::kDifference:
+    case DlClipOp::kDifference:
       if (oval_covers_cull(bounds)) {
         cull_rect_ = DlRect();
       }
@@ -67,48 +68,81 @@ void DisplayListMatrixClipState::clipOval(const DlRect& bounds,
   }
 }
 
+namespace {
+inline std::array<DlRect, 2> RoundingRadiiSafeRects(
+    const DlRect& bounds,
+    const impeller::RoundingRadii& radii) {
+  return {
+      bounds.Expand(  //
+          -std::max(radii.top_left.width, radii.bottom_left.width), 0,
+          -std::max(radii.top_right.width, radii.bottom_right.width), 0),
+      bounds.Expand(
+          0, -std::max(radii.top_left.height, radii.top_right.height),  //
+          0, -std::max(radii.bottom_left.height, radii.bottom_right.height))};
+}
+}  // namespace
+
 void DisplayListMatrixClipState::clipRRect(const DlRoundRect& rrect,
-                                           ClipOp op,
+                                           DlClipOp op,
                                            bool is_aa) {
   DlRect bounds = rrect.GetBounds();
   if (rrect.IsRect()) {
     return clipRect(bounds, op, is_aa);
   }
   switch (op) {
-    case ClipOp::kIntersect:
+    case DlClipOp::kIntersect:
       adjustCullRect(bounds, op, is_aa);
       break;
-    case ClipOp::kDifference: {
+    case DlClipOp::kDifference: {
       if (rrect_covers_cull(rrect)) {
         cull_rect_ = DlRect();
         return;
       }
-      auto radii = rrect.GetRadii();
-      DlRect safe = bounds.Expand(
-          -std::max(radii.top_left.width, radii.bottom_left.width), 0,
-          -std::max(radii.top_right.width, radii.bottom_right.width), 0);
-      adjustCullRect(safe, op, is_aa);
-      safe = bounds.Expand(
-          0, -std::max(radii.top_left.height, radii.top_right.height),  //
-          0, -std::max(radii.bottom_left.height, radii.bottom_right.height));
-      adjustCullRect(safe, op, is_aa);
+      auto safe_rects = RoundingRadiiSafeRects(bounds, rrect.GetRadii());
+      adjustCullRect(safe_rects[0], op, is_aa);
+      adjustCullRect(safe_rects[1], op, is_aa);
+      break;
+    }
+  }
+}
+
+void DisplayListMatrixClipState::clipRSuperellipse(
+    const DlRoundSuperellipse& rse,
+    DlClipOp op,
+    bool is_aa) {
+  DlRect bounds = rse.GetBounds();
+  if (rse.IsRect()) {
+    return clipRect(bounds, op, is_aa);
+  }
+  switch (op) {
+    case DlClipOp::kIntersect:
+      adjustCullRect(bounds, op, is_aa);
+      break;
+    case DlClipOp::kDifference: {
+      if (rsuperellipse_covers_cull(rse)) {
+        cull_rect_ = DlRect();
+        return;
+      }
+      auto safe_rects = RoundingRadiiSafeRects(bounds, rse.GetRadii());
+      adjustCullRect(safe_rects[0], op, is_aa);
+      adjustCullRect(safe_rects[1], op, is_aa);
       break;
     }
   }
 }
 
 void DisplayListMatrixClipState::clipPath(const DlPath& path,
-                                          ClipOp op,
+                                          DlClipOp op,
                                           bool is_aa) {
   DlRect bounds = path.GetBounds();
   if (path.IsRect(nullptr)) {
     return clipRect(bounds, op, is_aa);
   }
   switch (op) {
-    case ClipOp::kIntersect:
+    case DlClipOp::kIntersect:
       adjustCullRect(bounds, op, is_aa);
       break;
-    case ClipOp::kDifference:
+    case DlClipOp::kDifference:
       break;
   }
 }
@@ -148,7 +182,7 @@ void DisplayListMatrixClipState::resetLocalCullRect(const DlRect& cull_rect) {
 }
 
 void DisplayListMatrixClipState::adjustCullRect(const DlRect& clip,
-                                                ClipOp op,
+                                                DlClipOp op,
                                                 bool is_aa) {
   if (cull_rect_.IsEmpty()) {
     // No point in constraining further.
@@ -159,7 +193,7 @@ void DisplayListMatrixClipState::adjustCullRect(const DlRect& clip,
     return;
   }
   switch (op) {
-    case ClipOp::kIntersect: {
+    case DlClipOp::kIntersect: {
       if (clip.IsEmpty()) {
         cull_rect_ = DlRect();
         break;
@@ -172,7 +206,7 @@ void DisplayListMatrixClipState::adjustCullRect(const DlRect& clip,
       cull_rect_ = cull_rect_.Intersection(rect).value_or(DlRect());
       break;
     }
-    case ClipOp::kDifference: {
+    case DlClipOp::kDifference: {
       if (clip.IsEmpty()) {
         break;
       }
@@ -293,6 +327,38 @@ bool DisplayListMatrixClipState::rrect_covers_cull(
     auto rel = (corner - center).Abs() - inner;
     if (rel.x > 0.0f && rel.y > 0.0f &&
         (rel * scale).GetLengthSquared() >= 1.0f) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool DisplayListMatrixClipState::rsuperellipse_covers_cull(
+    const DlRoundSuperellipse& content) const {
+  if (content.IsEmpty()) {
+    return false;
+  }
+  if (cull_rect_.IsEmpty()) {
+    return true;
+  }
+  if (content.IsRect()) {
+    return rect_covers_cull(content.GetBounds());
+  }
+  if (content.IsOval()) {
+    return oval_covers_cull(content.GetBounds());
+  }
+  DlPoint corners[4];
+  if (!getLocalCullCorners(corners)) {
+    return false;
+  }
+  auto outer = content.GetBounds();
+  auto param = impeller::RoundSuperellipseParam::MakeBoundsRadii(
+      outer, content.GetRadii());
+  for (auto corner : corners) {
+    if (!outer.Contains(corner)) {
+      return false;
+    }
+    if (!param.Contains(corner)) {
       return false;
     }
   }

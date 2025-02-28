@@ -14,9 +14,6 @@
 namespace flutter {
 
 class DisplayListMatrixClipState {
- private:
-  using ClipOp = DlCanvas::ClipOp;
-
  public:
   explicit DisplayListMatrixClipState(const DlRect& cull_rect,
                                       const DlMatrix& matrix = DlMatrix());
@@ -46,6 +43,7 @@ class DisplayListMatrixClipState {
   bool rect_covers_cull(const DlRect& content) const;
   bool oval_covers_cull(const DlRect& content_bounds) const;
   bool rrect_covers_cull(const DlRoundRect& content) const;
+  bool rsuperellipse_covers_cull(const DlRoundSuperellipse& content) const;
 
   bool content_culled(const DlRect& content_bounds) const;
   bool is_cull_rect_empty() const { return cull_rect_.IsEmpty(); }
@@ -107,17 +105,20 @@ class DisplayListMatrixClipState {
   }
   bool mapAndClipRect(const DlRect& src, DlRect* mapped) const;
 
-  void clipRect(const DlRect& rect, ClipOp op, bool is_aa);
-  void clipOval(const DlRect& bounds, ClipOp op, bool is_aa);
-  void clipRRect(const DlRoundRect& rrect, ClipOp op, bool is_aa);
-  void clipPath(const DlPath& path, ClipOp op, bool is_aa);
+  void clipRect(const DlRect& rect, DlClipOp op, bool is_aa);
+  void clipOval(const DlRect& bounds, DlClipOp op, bool is_aa);
+  void clipRRect(const DlRoundRect& rrect, DlClipOp op, bool is_aa);
+  void clipRSuperellipse(const DlRoundSuperellipse& rse,
+                         DlClipOp op,
+                         bool is_aa);
+  void clipPath(const DlPath& path, DlClipOp op, bool is_aa);
 
  private:
   DlRect cull_rect_;
   DlMatrix matrix_;
 
   bool getLocalCullCorners(DlPoint corners[4]) const;
-  void adjustCullRect(const DlRect& clip, ClipOp op, bool is_aa);
+  void adjustCullRect(const DlRect& clip, DlClipOp op, bool is_aa);
 };
 
 }  // namespace flutter
